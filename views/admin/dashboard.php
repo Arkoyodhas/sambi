@@ -1,169 +1,204 @@
 <?php
-$statCards = [];
-if (!empty($access['population'])) {
-    $statCards[] = ['bi-people-fill', $stats['penduduk'] ?? 0, 'Penduduk', 'admin/penduduk'];
-    $statCards[] = ['bi-house-heart-fill', $stats['kk'] ?? 0, 'Kepala Keluarga', 'admin/keluarga'];
-    $statCards[] = ['bi-gender-male', $stats['laki'] ?? 0, 'Laki-laki', 'admin/penduduk?jk=L'];
-    $statCards[] = ['bi-gender-female', $stats['perempuan'] ?? 0, 'Perempuan', 'admin/penduduk?jk=P'];
-}
-if (!empty($access['news'])) $statCards[] = ['bi-newspaper', $stats['berita'] ?? 0, 'Berita', 'admin/berita'];
-if (!empty($access['services'])) $statCards[] = ['bi-inbox', $stats['layanan_baru'] ?? 0, 'Permohonan Baru', 'admin/permohonan?status=baru'];
-if (!empty($access['complaints'])) {
-    $statCards[] = ['bi-chat-square-text', $stats['pengaduan_baru'] ?? 0, 'Pengaduan Baru', 'admin/pengaduan?status=diterima'];
-    $statCards[] = ['bi-envelope', $stats['pesan'] ?? 0, 'Pesan Belum Dibaca', 'admin/pesan'];
-}
+$hour = (int) date('G');
+$greet = $hour < 11 ? 'Selamat pagi' : ($hour < 15 ? 'Selamat siang' : ($hour < 18 ? 'Selamat sore' : 'Selamat malam'));
+$firstName = explode(' ', trim($userName))[0] ?: 'Admin';
+$hari = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'][(int) date('w')];
+$actionable = array_values(array_filter($inbox, static fn($i) => empty($i['informational'])));
+$infoTiles = array_values(array_filter($inbox, static fn($i) => !empty($i['informational'])));
+$waiting = array_sum(array_map(static fn($i) => (int) $i['pending'], $actionable));
+$hotKey = null; $hotMax = 0;
+foreach ($actionable as $i) if ((int) $i['pending'] > $hotMax) { $hotMax = (int) $i['pending']; $hotKey = $i['key']; }
+$hotItem = null; foreach ($actionable as $i) if ($i['key'] === $hotKey) $hotItem = $i;
+$fmt = static fn($n) => number_format((int) $n, 0, ',', '.');
+$bulanPendek = ['', 'JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN', 'JUL', 'AGU', 'SEP', 'OKT', 'NOV', 'DES'];
+$feedTypes = [];
+foreach ($feed as $f) $feedTypes[$f['type']] = $f['typeLabel'];
 ?>
+<link href="<?= asset('css/dashboard.css') ?>" rel="stylesheet">
 
-<?php if ($statCards): ?>
-<div class="row g-3 mb-4">
-  <?php foreach ($statCards as [$ic, $val, $lab, $link]): ?>
-  <div class="col-6 col-md-3">
-    <a href="<?= url($link) ?>" class="text-decoration-none text-reset">
-      <div class="stat-tile" data-testid="dash-stat-<?= slugify($lab) ?>">
-        <div class="ic"><i class="bi <?= $ic ?>"></i></div>
-        <div><div class="val"><?= number_format((int) $val, 0, ',', '.') ?></div><div class="lab"><?= e($lab) ?></div></div>
+<div class="dx" data-testid="dashboard-root">
+
+  <header class="dx-hero dx-rise">
+    <div>
+      <p class="dx-eyebrow" data-testid="dash-date"><?= e($hari . ', ' . tgl_id(date('Y-m-d'))) ?></p>
+      <h1 class="dx-title" data-testid="dash-greeting"><?= e($greet) ?>, <?= e($firstName) ?>.</h1>
+      <?php if ($inbox): ?>
+        <?php if ($waiting > 0): ?>
+        <p class="dx-lede" data-testid="dash-waiting-summary">Ada <strong><?= $fmt($waiting) ?> hal dari warga</strong> yang menunggu tanggapan Anda.</p>
+        <?php else: ?>
+        <p class="dx-lede" data-testid="dash-waiting-summary">Semua permintaan warga sudah ditanggapi. <span class="dx-calm">Kerja yang rapi.</span></p>
+        <?php endif; ?>
+      <?php else: ?>
+        <p class="dx-lede">Gunakan menu di samping untuk mengelola konten sesuai hak akses Anda.</p>
+      <?php endif; ?>
+    </div>
+    <?php if ($hotItem): ?>
+    <a class="dx-cta" href="<?= e($hotItem['url']) ?>" data-testid="dash-primary-action">
+      Buka <?= e(mb_strtolower($hotItem['label'])) ?> <i class="bi bi-arrow-right"></i>
+    </a>
+    <?php endif; ?>
+  </header>
+
+  <?php if ($actionable): ?>
+  <section class="dx-inbox" style="--n:<?= count($actionable) ?>" aria-label="Kotak masuk warga" data-testid="dash-inbox">
+    <?php foreach ($actionable as $n => $i): $p = (int) $i['pending']; $isHot = $i['key'] === $hotKey; $clear = $p === 0 && empty($i['informational']); ?>
+    <a href="<?= e($i['url']) ?>" class="dx-tile t-<?= e($i['key']) ?><?= $isHot ? ' is-hot' : '' ?><?= $clear ? ' is-clear' : '' ?> dx-rise" style="--d:<?= 60 + $n * 50 ?>ms" data-testid="dash-inbox-<?= e($i['key']) ?>">
+      <div class="dx-tile-top">
+        <span class="dx-chip"><i class="bi <?= e($i['icon']) ?>"></i></span>
+        <span class="dx-tile-label"><?= e($i['label']) ?></span>
+        <i class="bi bi-chevron-right dx-tile-go"></i>
+      </div>
+      <div class="dx-tile-num" data-testid="dash-inbox-<?= e($i['key']) ?>-count"><?= $fmt($p) ?></div>
+      <div class="dx-tile-cap"><?= $clear ? '<i class="bi bi-check2-circle"></i> Semua beres' : e($i['pendingLabel']) ?></div>
+      <div class="dx-tile-foot">
+        <?php if ($i['progress'] !== null): ?><span><b><?= $fmt($i['progress']) ?></b> <?= e($i['progressLabel']) ?></span><?php endif; ?>
+        <?php if (!empty($i['latest']) && !$clear): ?><span class="dx-latest">Terbaru: <?= e(excerpt($i['latest'], 22)) ?></span><?php endif; ?>
       </div>
     </a>
-  </div>
-  <?php endforeach; ?>
-</div>
-<?php endif; ?>
+    <?php endforeach; ?>
+  </section>
+  <?php endif; ?>
 
-<?php if (!empty($access['audit'])): ?>
-<div class="row g-3 mb-4">
-  <div class="col-lg-8">
-    <div class="acard h-100">
-      <div class="acard-head">
-        <h6 class="mb-0"><i class="bi bi-graph-up-arrow me-2 text-primary"></i>Kunjungan Website 30 Hari</h6>
-        <span class="small text-muted">Hari ini: <b><?= number_format((int) ($visitToday['uv'] ?? 0), 0, ',', '.') ?></b> pengunjung · <b><?= number_format((int) ($visitToday['pv'] ?? 0), 0, ',', '.') ?></b> tayangan · <a href="<?= url('admin/kunjungan') ?>">Detail</a></span>
+  <div class="dx-grid">
+    <div class="dx-main">
+    <?php if ($inbox): ?>
+    <section class="dx-card dx-feed dx-rise" style="--d:260ms" data-testid="dash-feed">
+      <div class="dx-card-head">
+        <div>
+          <h2 class="dx-h2">Terbaru dari warga</h2>
+          <p class="dx-sub">Yang belum selesai, diurutkan dari yang paling baru.</p>
+        </div>
+        <?php if (count($feedTypes) > 1): ?>
+        <div class="dx-seg" role="tablist" data-testid="dash-feed-filter">
+          <button type="button" class="is-on" data-filter="all" data-testid="dash-feed-filter-all">Semua</button>
+          <?php foreach ($feedTypes as $k => $lab): ?>
+          <button type="button" data-filter="<?= e($k) ?>" data-testid="dash-feed-filter-<?= e($k) ?>"><?= e($lab) ?></button>
+          <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
       </div>
-      <div class="acard-body"><canvas id="visitDashChart" height="105"></canvas></div>
-    </div>
-  </div>
-  <div class="col-lg-4">
-    <div class="acard h-100">
-      <div class="acard-head"><h6 class="mb-0"><i class="bi bi-fire me-2 text-danger"></i>Halaman Terpopuler</h6></div>
-      <div class="acard-body small">
-        <?php $maxTop = max(1, (int) ($visitTop[0]['total'] ?? 1)); foreach ($visitTop as $tp): ?>
-        <div class="mb-2">
-          <div class="d-flex justify-content-between"><code class="small"><?= e($tp['path']) ?></code><strong><?= number_format((int) $tp['total'], 0, ',', '.') ?></strong></div>
-          <div class="progress" style="height:5px"><div class="progress-bar bg-danger" style="width:<?= round($tp['total'] / $maxTop * 100) ?>%"></div></div>
+      <ul class="dx-list">
+        <?php foreach ($feed as $n => $f): ?>
+        <li class="dx-row t-<?= e($f['type']) ?>" data-type="<?= e($f['type']) ?>">
+          <a href="<?= e($f['url']) ?>" data-testid="dash-feed-item-<?= $n ?>">
+            <span class="dx-avatar"><?= e(mb_strtoupper(mb_substr(trim((string) $f['name']) ?: '?', 0, 1))) ?></span>
+            <span class="dx-row-main">
+              <span class="dx-row-top">
+                <span class="dx-row-name"><?= e($f['name']) ?></span>
+                <span class="dx-tag"><?= e($f['typeLabel']) ?></span>
+              </span>
+              <span class="dx-row-text"><?= e($f['text']) ?></span>
+            </span>
+            <span class="dx-row-meta">
+              <span class="dx-time"><?= e($f['ago']) ?></span>
+              <span class="dx-state s-<?= e(slugify((string) $f['status'])) ?>"><?= e(ucfirst((string) $f['status'])) ?></span>
+            </span>
+          </a>
+        </li>
+        <?php endforeach; ?>
+      </ul>
+      <div class="dx-empty<?= $feed ? ' d-none' : '' ?>" data-testid="dash-feed-empty">
+        <i class="bi bi-inbox"></i>
+        <p>Kotak masuk kosong. Permintaan baru dari warga akan muncul di sini.</p>
+      </div>
+    </section>
+    <?php endif; ?>
+  <?php if ($stats): ?>
+    <section class="dx-glance dx-rise" style="--d:480ms" data-testid="dash-glance">
+      <h2 class="dx-h2">Sekilas desa</h2><p class="dx-sub">Data kependudukan dan konten saat ini.</p>
+      <div class="dx-glance-row">
+        <?php
+        $glance = [];
+        if (isset($stats['penduduk'])) {
+            $glance[] = ['Penduduk', $stats['penduduk'], 'admin/penduduk'];
+            $glance[] = ['Kepala keluarga', $stats['kk'], 'admin/keluarga'];
+            $glance[] = ['Laki-laki', $stats['laki'], 'admin/penduduk?jk=L'];
+            $glance[] = ['Perempuan', $stats['perempuan'], 'admin/penduduk?jk=P'];
+        }
+        if (isset($stats['berita'])) $glance[] = ['Berita terbit', $stats['berita'], 'admin/berita'];
+        foreach ($glance as [$lab, $val, $link]): ?>
+        <a class="dx-stat" href="<?= url($link) ?>" data-testid="dash-stat-<?= slugify($lab) ?>">
+          <span class="dx-stat-v"><?= $fmt($val) ?></span>
+          <span class="dx-stat-k"><?= e($lab) ?></span>
+        </a>
+        <?php endforeach; ?>
+      </div>
+      <?php if ($dusunChart): $maxD = max(1, max(array_map('intval', array_column($dusunChart, 'total')))); ?>
+      <div class="dx-bars" data-testid="dash-dusun-bars">
+        <?php foreach ($dusunChart as $d): ?>
+        <div class="dx-bar">
+          <span class="dx-bar-k" title="<?= e($d['label']) ?>"><?= e($d['label']) ?></span>
+          <span class="dx-bar-track"><span style="width:<?= max(2, round((int) $d['total'] / $maxD * 100)) ?>%"></span></span>
+          <span class="dx-bar-v"><?= $fmt($d['total']) ?></span>
         </div>
         <?php endforeach; ?>
-        <?php if (!$visitTop): ?><span class="text-muted">Belum ada data kunjungan.</span><?php endif; ?>
       </div>
+      <?php endif; ?>
+    </section>
+    <?php endif; ?>
     </div>
-  </div>
-</div>
-<?php endif; ?>
 
-<?php if (!empty($access['music']) || !empty($access['event']) || !empty($access['news'])): ?>
-<div class="row g-3 mb-4">
-  <?php if (!empty($access['music']) || !empty($access['event'])): ?>
-  <div class="<?= !empty($access['news']) ? 'col-md-6' : 'col-12' ?>">
-    <div class="acard h-100">
-      <div class="acard-head"><h6 class="mb-0"><i class="bi bi-music-note-beamed me-2 text-success"></i>Status Musik & Event</h6></div>
-      <div class="acard-body small">
-        <?php if (!empty($access['music'])): ?>
-        <div class="d-flex justify-content-between py-1">
-          <span class="text-muted">Musik website</span>
-          <?php if (setting('music_enabled') === '1' && $activeMusic): ?>
-          <span class="badge text-bg-success"><i class="bi bi-play-fill"></i> <?= e($activeMusic['title']) ?></span>
-          <?php else: ?><span class="badge text-bg-secondary">Nonaktif</span><?php endif; ?>
+    <aside class="dx-side">
+      <?php foreach ($infoTiles as $i): ?>
+      <a class="dx-card dx-mini t-<?= e($i['key']) ?> dx-rise" style="--d:300ms" href="<?= e($i['url']) ?>" data-testid="dash-inbox-<?= e($i['key']) ?>">
+        <span class="dx-chip"><i class="bi <?= e($i['icon']) ?>"></i></span>
+        <span class="dx-mini-main"><span class="dx-mini-k"><?= e($i['label']) ?> pengunjung</span><span class="dx-mini-v" data-testid="dash-inbox-<?= e($i['key']) ?>-count"><?= $fmt($i['pending']) ?> <small><?= e($i['pendingLabel']) ?></small></span></span>
+        <i class="bi bi-chevron-right"></i>
+      </a>
+      <?php endforeach; ?>
+
+      <?php if (!empty($access['news'])): ?>
+      <section class="dx-card dx-rise" style="--d:320ms" data-testid="dash-agenda">
+        <div class="dx-card-head"><h2 class="dx-h2">Agenda</h2><a class="dx-link" href="<?= url('admin/agenda') ?>">Semua</a></div>
+        <?php foreach ($agendas as $a): $ts = strtotime($a['event_date']); ?>
+        <div class="dx-agenda">
+          <span class="dx-cal"><small><?= $bulanPendek[(int) date('n', $ts)] ?></small><b><?= date('j', $ts) ?></b></span>
+          <span>
+            <span class="dx-agenda-title"><?= e($a['title']) ?></span>
+            <span class="dx-agenda-meta"><?= $a['start_time'] ? e(substr($a['start_time'], 0, 5)) . ' WIB' : 'Sepanjang hari' ?><?= $a['location'] ? ' · ' . e(excerpt($a['location'], 28)) : '' ?></span>
+          </span>
         </div>
+        <?php endforeach; ?>
+        <?php if (!$agendas): ?><p class="dx-muted">Tidak ada agenda terdekat.</p><?php endif; ?>
+      </section>
+      <?php endif; ?>
+
+      <?php if (!empty($access['music']) || !empty($access['event'])): ?>
+      <section class="dx-card dx-rise" style="--d:380ms" data-testid="dash-site-status">
+        <div class="dx-card-head"><h2 class="dx-h2">Suasana website</h2></div>
+        <?php if (!empty($access['music'])): $on = setting('music_enabled') === '1' && $activeMusic; ?>
+        <a class="dx-status" href="<?= url('admin/musik') ?>" data-testid="dash-music-status">
+          <span class="dx-dot<?= $on ? ' on' : '' ?>"></span>
+          <span><span class="dx-status-k">Musik latar</span><span class="dx-status-v"><?= $on ? e($activeMusic['title']) : 'Tidak diputar' ?></span></span>
+          <i class="bi bi-chevron-right"></i>
+        </a>
         <?php endif; ?>
         <?php if (!empty($access['event'])): ?>
-        <div class="d-flex justify-content-between py-1">
-          <span class="text-muted">Event effect aktif</span>
-          <?php if ($activeEvent): ?><span class="badge text-bg-warning text-dark"><?= e($activeEvent['event_name']) ?></span>
-          <?php else: ?><span class="badge text-bg-secondary">Tidak ada</span><?php endif; ?>
-        </div>
+        <a class="dx-status" href="<?= url('admin/event') ?>" data-testid="dash-event-status">
+          <span class="dx-dot<?= $activeEvent ? ' on' : '' ?>"></span>
+          <span><span class="dx-status-k">Efek event</span><span class="dx-status-v"><?= $activeEvent ? e($activeEvent['event_name']) : 'Tidak ada yang aktif' ?></span></span>
+          <i class="bi bi-chevron-right"></i>
+        </a>
         <?php endif; ?>
-        <div class="mt-2 d-flex gap-2">
-          <?php if (!empty($access['music'])): ?><a href="<?= url('admin/musik') ?>" class="btn btn-sm btn-outline-primary">Kelola Musik</a><?php endif; ?>
-          <?php if (!empty($access['event'])): ?><a href="<?= url('admin/event') ?>" class="btn btn-sm btn-outline-primary">Event Experience</a><?php endif; ?>
-        </div>
-      </div>
-    </div>
-  </div>
-  <?php endif; ?>
+      </section>
+      <?php endif; ?>
 
-  <?php if (!empty($access['news'])): ?>
-  <div class="<?= (!empty($access['music']) || !empty($access['event'])) ? 'col-md-6' : 'col-12' ?>">
-    <div class="acard h-100">
-      <div class="acard-head"><h6 class="mb-0"><i class="bi bi-calendar-event me-2 text-primary"></i>Agenda Terdekat</h6></div>
-      <div class="acard-body small">
-        <?php foreach ($agendas as $a): ?>
-        <div class="d-flex justify-content-between py-1 border-bottom"><span><?= e($a['title']) ?></span><span class="text-muted text-nowrap ms-2"><?= tgl_id($a['event_date']) ?></span></div>
-        <?php endforeach; ?>
-        <?php if (!$agendas): ?><span class="text-muted">Tidak ada agenda terdekat.</span><?php endif; ?>
-      </div>
-    </div>
-  </div>
-  <?php endif; ?>
-</div>
-<?php endif; ?>
-
-<?php if (!empty($access['population']) || !empty($access['audit'])): ?>
-<div class="row g-3 mb-4">
-  <?php if (!empty($access['population'])): ?>
-  <div class="<?= !empty($access['audit']) ? 'col-lg-5' : 'col-12' ?>">
-    <div class="acard h-100">
-      <div class="acard-head"><h6 class="mb-0">Penduduk per Dusun</h6></div>
-      <div class="acard-body"><canvas id="dashChart" height="210"></canvas></div>
-    </div>
-  </div>
-  <?php endif; ?>
-  <?php if (!empty($access['audit'])): ?>
-  <div class="<?= !empty($access['population']) ? 'col-lg-7' : 'col-12' ?>">
-    <div class="acard h-100">
-      <div class="acard-head"><h6 class="mb-0">Aktivitas Admin Terbaru</h6><a class="small" href="<?= url('admin/audit') ?>">Semua log</a></div>
-      <div class="acard-body p-0"><div class="table-responsive"><table class="table table-admin table-hover mb-0"><tbody>
+      <?php if (!empty($access['audit']) && $recentLogs): ?>
+      <section class="dx-card dx-rise" style="--d:440ms" data-testid="dash-team-activity">
+        <div class="dx-card-head"><h2 class="dx-h2">Aktivitas tim</h2><a class="dx-link" href="<?= url('admin/audit') ?>">Log</a></div>
         <?php foreach ($recentLogs as $l): ?>
-        <tr><td><span class="badge text-bg-light border"><?= e($l['action']) ?></span></td><td class="small"><?= e(excerpt($l['description'], 60)) ?></td><td class="small text-muted text-nowrap"><?= e($l['user_name'] ?: 'Sistem') ?><br><?= date('d/m H:i', strtotime($l['created_at'])) ?></td></tr>
+        <div class="dx-log">
+          <span class="dx-log-who"><?= e($l['user_name'] ?: 'Sistem') ?></span>
+          <span class="dx-log-what"><?= e(excerpt($l['description'], 70)) ?></span>
+          <span class="dx-log-when"><?= date('d/m H:i', strtotime($l['created_at'])) ?></span>
+        </div>
         <?php endforeach; ?>
-        <?php if (!$recentLogs): ?><tr><td class="text-muted small p-3">Belum ada aktivitas.</td></tr><?php endif; ?>
-      </tbody></table></div></div>
-    </div>
+      </section>
+      <?php endif; ?>
+    </aside>
   </div>
-  <?php endif; ?>
-</div>
-<?php endif; ?>
 
-<?php if (!empty($access['services']) || !empty($access['complaints'])): ?>
-<div class="row g-3">
-  <?php if (!empty($access['services'])): ?>
-  <div class="<?= !empty($access['complaints']) ? 'col-lg-6' : 'col-12' ?>">
-    <div class="acard">
-      <div class="acard-head"><h6 class="mb-0">Permohonan Layanan Terbaru</h6><a class="small" href="<?= url('admin/permohonan') ?>">Semua</a></div>
-      <div class="acard-body p-0"><div class="table-responsive"><table class="table table-admin mb-0"><tbody>
-        <?php foreach ($recentRequests as $r): ?><tr><td><a href="<?= url('admin/permohonan/detail/' . $r['id']) ?>"><?= e($r['ticket']) ?></a><br><small class="text-muted"><?= e($r['service_name']) ?></small></td><td class="small"><?= e($r['nama']) ?></td><td><?= status_badge($r['status']) ?></td></tr><?php endforeach; ?>
-        <?php if (!$recentRequests): ?><tr><td class="text-muted small p-3">Belum ada permohonan.</td></tr><?php endif; ?>
-      </tbody></table></div></div>
-    </div>
-  </div>
-  <?php endif; ?>
-
-  <?php if (!empty($access['complaints'])): ?>
-  <div class="<?= !empty($access['services']) ? 'col-lg-6' : 'col-12' ?>">
-    <div class="acard">
-      <div class="acard-head"><h6 class="mb-0">Pengaduan Terbaru</h6><a class="small" href="<?= url('admin/pengaduan') ?>">Semua</a></div>
-      <div class="acard-body p-0"><div class="table-responsive"><table class="table table-admin mb-0"><tbody>
-        <?php foreach ($recentComplaints as $c): ?><tr><td><a href="<?= url('admin/pengaduan/detail/' . $c['id']) ?>"><?= e($c['ticket']) ?></a><br><small class="text-muted"><?= e($c['category']) ?></small></td><td class="small"><?= e(excerpt($c['content'], 40)) ?></td><td><?= status_badge($c['status']) ?></td></tr><?php endforeach; ?>
-        <?php if (!$recentComplaints): ?><tr><td class="text-muted small p-3">Belum ada pengaduan.</td></tr><?php endif; ?>
-      </tbody></table></div></div>
-    </div>
-  </div>
-  <?php endif; ?>
 </div>
-<?php endif; ?>
-
-<?php if (!$statCards && empty($access['audit']) && empty($access['music']) && empty($access['event']) && empty($access['news']) && empty($access['population']) && empty($access['services']) && empty($access['complaints'])): ?>
-<div class="acard">
-  <div class="acard-head"><h6 class="mb-0">Selamat Bekerja</h6></div>
-  <div class="acard-body"><p class="text-muted mb-0">Gunakan menu di samping untuk mengelola konten sesuai hak akses Anda. Data yang tidak termasuk izin akun ini tidak dimuat ke dashboard.</p></div>
-</div>
-<?php endif; ?>
 
 <?php if (!empty($needFaceSetup)): ?>
 <div id="faceSetupPrompt" class="face-setup-prompt" data-testid="face-setup-prompt" role="dialog" aria-modal="true" aria-labelledby="faceSetupTitle">
@@ -184,31 +219,16 @@ if (!empty($access['complaints'])) {
     </div>
   </div>
 </div>
-<script>
-(function(){
-  var prompt = document.getElementById('faceSetupPrompt'); if (!prompt) return;
-  document.body.classList.add('face-setup-open'); prompt.classList.add('is-visible');
-  function closePrompt(){ document.body.classList.remove('face-setup-open'); prompt.classList.remove('is-visible'); setTimeout(function(){ if (prompt.parentNode) prompt.parentNode.removeChild(prompt); }, 200); }
-  prompt.querySelectorAll('[data-face-dismiss]').forEach(function(el){ el.addEventListener('click', closePrompt); });
-  document.addEventListener('keydown', function(ev){ if (ev.key === 'Escape' && prompt.isConnected) closePrompt(); });
-})();
-</script>
 <?php endif; ?>
 
 <?php
-$charts = '';
-if (!empty($access['population']) || !empty($access['audit'])) {
-    $charts .= '<script src="' . e(asset('vendor/chart/chart.umd.min.js')) . '"></script><script>';
-    if (!empty($access['population'])) {
-        $charts .= 'var dc=document.getElementById("dashChart");if(dc)new Chart(dc,{type:"doughnut",data:{labels:' . json_encode(array_column($dusunChart, 'label')) . ',datasets:[{data:' . json_encode(array_map('intval', array_column($dusunChart, 'total'))) . '}]},options:{plugins:{legend:{position:"bottom"}}}});';
-    }
-    if (!empty($access['audit'])) {
-        $vLabels=[];$vPv=[];$vUv=[];$pvMap=[];$uvMap=[];
-        foreach ($visitDaily as $vd) { $pvMap[$vd['d']] = (int)$vd['pv']; $uvMap[$vd['d']] = (int)$vd['uv']; }
-        for ($i=29;$i>=0;$i--){$d=date('Y-m-d',strtotime("-$i days"));$vLabels[]=date('d/m',strtotime($d));$vPv[]=$pvMap[$d]??0;$vUv[]=$uvMap[$d]??0;}
-        $charts .= 'var vc=document.getElementById("visitDashChart");if(vc)new Chart(vc,{type:"line",data:{labels:' . json_encode($vLabels) . ',datasets:[{label:"Tayangan",data:' . json_encode($vPv) . ',fill:true,tension:.35,pointRadius:2},{label:"Pengunjung",data:' . json_encode($vUv) . ',fill:true,tension:.35,pointRadius:2}]},options:{plugins:{legend:{position:"bottom"}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});';
-    }
-    $charts .= '</script>';
-}
-$inlineScript = $charts;
+$inlineScript = '<script>(function(){'
+    . 'var p=document.getElementById("faceSetupPrompt");if(p){document.body.classList.add("face-setup-open");p.classList.add("is-visible");'
+    . 'var c=function(){document.body.classList.remove("face-setup-open");p.classList.remove("is-visible");setTimeout(function(){if(p.parentNode)p.parentNode.removeChild(p);},200);};'
+    . 'p.querySelectorAll("[data-face-dismiss]").forEach(function(el){el.addEventListener("click",c);});'
+    . 'document.addEventListener("keydown",function(ev){if(ev.key==="Escape"&&p.isConnected)c();});}'
+    . 'var seg=document.querySelector(".dx-seg");if(!seg)return;var rows=document.querySelectorAll(".dx-row"),empty=document.querySelector(".dx-empty");'
+    . 'seg.addEventListener("click",function(ev){var b=ev.target.closest("button");if(!b)return;seg.querySelectorAll("button").forEach(function(x){x.classList.toggle("is-on",x===b);});'
+    . 'var f=b.getAttribute("data-filter"),shown=0;rows.forEach(function(r){var ok=f==="all"||r.getAttribute("data-type")===f;r.hidden=!ok;if(ok)shown++;});if(empty)empty.classList.toggle("d-none",shown>0);});'
+    . '})();</script>';
 ?>
