@@ -39,3 +39,10 @@ Perbaiki fitur cloning website admin (gagal karena batas waktu request) dan past
 - app.js: data musik dimuat saat halaman dibuka (bukan setelah scroll), tap/klik pertama langsung memutar musik (pointerup/touchend/click/keydown), posisi lagu dilanjutkan saat pindah halaman.
 - MediaController::musik: lepas kunci sesi, matikan buffer/kompresi output, stream per 64KB dengan flush.
 - Testing agent: backend 100%, frontend 100% (Chrome dengan autoplay policy asli, emulasi iPhone & Pixel).
+
+## Update (Nov 2026) — Dashboard admin baru (gaya Apple)
+- Statistik kunjungan dihapus dari dashboard (sudah ada menu Kunjungan).
+- Hero sapaan + ringkasan "N hal dari warga menunggu", tombol aksi ke kategori paling mendesak.
+- Kotak masuk warga: Surat, Pengaduan, Pesan, Live Chat, Komentar (kartu gelap = paling mendesak), Masukan pengunjung di samping.
+- Feed gabungan "Terbaru dari warga" dengan filter, agenda gaya kalender, status musik/event, aktivitas tim, "Sekilas desa".
+- File: controllers/admin/DashboardController.php, views/admin/dashboard.php, assets/css/dashboard.css (baru). Testing agent: 100%.

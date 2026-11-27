@@ -84,13 +84,13 @@ class DashboardController extends Controller {
         if ($access['services']) {
             $safe(function () use (&$inbox, &$feed) {
                 $rows = db_all("SELECT r.id, r.ticket, r.nama, r.status, r.created_at, s.name AS service_name FROM service_requests r
-                    LEFT JOIN services s ON s.id=r.service_id WHERE r.deleted_at IS NULL AND r.status IN ('baru','diproses') ORDER BY r.id DESC LIMIT 6");
+                    LEFT JOIN services s ON s.id=r.service_id WHERE r.deleted_at IS NULL AND r.status IN ('baru','diproses') ORDER BY r.created_at DESC, r.id DESC LIMIT 12");
                 $inbox[] = [
                     'key' => 'surat', 'label' => 'Surat', 'icon' => 'bi-file-earmark-text',
                     'pending' => (int) db_val("SELECT COUNT(*) FROM service_requests WHERE deleted_at IS NULL AND status='baru'"),
                     'progress' => (int) db_val("SELECT COUNT(*) FROM service_requests WHERE deleted_at IS NULL AND status='diproses'"),
                     'pendingLabel' => 'baru masuk', 'progressLabel' => 'sedang diproses',
-                    'url' => url('admin/permohonan?status=baru'), 'latest' => $rows[0]['nama'] ?? null,
+                    'url' => url('admin/permohonan?status=baru'), 'latest' => $this->firstWith($rows, 'baru')['nama'] ?? null,
                 ];
                 foreach ($rows as $r) $feed[] = ['type' => 'surat', 'typeLabel' => 'Surat', 'name' => $r['nama'], 'text' => ($r['service_name'] ?: 'Permohonan layanan') . ' · ' . $r['ticket'], 'time' => $r['created_at'], 'status' => $r['status'], 'url' => url('admin/permohonan/detail/' . $r['id'])];
             });
@@ -99,13 +99,14 @@ class DashboardController extends Controller {
         if ($access['complaints']) {
             $safe(function () use (&$inbox, &$feed) {
                 $rows = db_all("SELECT id, ticket, nama, is_anonymous, category, content, status, created_at FROM complaints
-                    WHERE deleted_at IS NULL AND status IN ('diterima','diproses') ORDER BY id DESC LIMIT 6");
+                    WHERE deleted_at IS NULL AND status IN ('diterima','diproses') ORDER BY created_at DESC, id DESC LIMIT 12");
+                $first = $this->firstWith($rows, 'diterima');
                 $inbox[] = [
                     'key' => 'aduan', 'label' => 'Pengaduan', 'icon' => 'bi-megaphone',
                     'pending' => (int) db_val("SELECT COUNT(*) FROM complaints WHERE deleted_at IS NULL AND status='diterima'"),
                     'progress' => (int) db_val("SELECT COUNT(*) FROM complaints WHERE deleted_at IS NULL AND status='diproses'"),
                     'pendingLabel' => 'belum ditanggapi', 'progressLabel' => 'sedang diproses',
-                    'url' => url('admin/pengaduan?status=diterima'), 'latest' => $rows ? ($rows[0]['is_anonymous'] ? 'Anonim' : $rows[0]['nama']) : null,
+                    'url' => url('admin/pengaduan?status=diterima'), 'latest' => $first ? ($first['is_anonymous'] || !$first['nama'] ? 'Anonim' : $first['nama']) : null,
                 ];
                 foreach ($rows as $r) $feed[] = ['type' => 'aduan', 'typeLabel' => 'Pengaduan', 'name' => $r['is_anonymous'] || !$r['nama'] ? 'Anonim' : $r['nama'], 'text' => ($r['category'] ? $r['category'] . ' — ' : '') . excerpt($r['content'], 90), 'time' => $r['created_at'], 'status' => $r['status'], 'url' => url('admin/pengaduan/detail/' . $r['id'])];
             });
@@ -113,7 +114,7 @@ class DashboardController extends Controller {
 
         if ($access['contact']) {
             $safe(function () use (&$inbox, &$feed) {
-                $rows = db_all("SELECT id, name, subject, message, created_at FROM contact_messages WHERE is_read=0 ORDER BY id DESC LIMIT 6");
+                $rows = db_all("SELECT id, name, subject, message, created_at FROM contact_messages WHERE is_read=0 ORDER BY created_at DESC, id DESC LIMIT 12");
                 $inbox[] = [
                     'key' => 'pesan', 'label' => 'Pesan', 'icon' => 'bi-envelope-open',
                     'pending' => (int) db_val("SELECT COUNT(*) FROM contact_messages WHERE is_read=0"),
@@ -127,7 +128,7 @@ class DashboardController extends Controller {
         if ($access['chat']) {
             $safe(function () use (&$inbox, &$feed) {
                 $rows = db_all("SELECT id, visitor_name, last_message, last_message_at, created_at, unread_admin FROM chat_rooms
-                    WHERE status='open' AND unread_admin > 0 ORDER BY COALESCE(last_message_at, created_at) DESC LIMIT 6");
+                    WHERE status='open' AND unread_admin > 0 ORDER BY COALESCE(last_message_at, created_at) DESC LIMIT 12");
                 $inbox[] = [
                     'key' => 'chat', 'label' => 'Live Chat', 'icon' => 'bi-chat-dots',
                     'pending' => (int) db_val("SELECT COUNT(*) FROM chat_rooms WHERE status='open' AND unread_admin > 0"),
@@ -141,7 +142,7 @@ class DashboardController extends Controller {
 
         if ($access['news']) {
             $safe(function () use (&$inbox, &$feed) {
-                $rows = db_all("SELECT c.id, c.name, c.content, c.created_at, n.title FROM news_comments c LEFT JOIN news n ON n.id=c.news_id WHERE c.is_approved=0 ORDER BY c.id DESC LIMIT 6");
+                $rows = db_all("SELECT c.id, c.name, c.content, c.created_at, n.title FROM news_comments c LEFT JOIN news n ON n.id=c.news_id WHERE c.is_approved=0 ORDER BY c.created_at DESC, c.id DESC LIMIT 12");
                 $inbox[] = [
                     'key' => 'komentar', 'label' => 'Komentar', 'icon' => 'bi-chat-quote',
                     'pending' => (int) db_val("SELECT COUNT(*) FROM news_comments WHERE is_approved=0"),
@@ -155,7 +156,7 @@ class DashboardController extends Controller {
         if ($access['feedback']) {
             $safe(function () use (&$inbox, &$feed) {
                 $since = date('Y-m-d H:i:s', strtotime('-7 days'));
-                $rows = db_all("SELECT id, respondent_name, created_at FROM feedback_responses WHERE created_at >= ? ORDER BY id DESC LIMIT 4", [$since]);
+                $rows = db_all("SELECT id, respondent_name, created_at FROM feedback_responses WHERE created_at >= ? ORDER BY created_at DESC, id DESC LIMIT 6", [$since]);
                 $inbox[] = [
                     'key' => 'masukan', 'label' => 'Masukan', 'icon' => 'bi-hand-thumbs-up',
                     'pending' => (int) db_val("SELECT COUNT(*) FROM feedback_responses WHERE created_at >= ?", [$since]),
@@ -167,6 +168,11 @@ class DashboardController extends Controller {
         }
 
         return [$inbox, $feed];
+    }
+
+    private function firstWith(array $rows, string $status): ?array {
+        foreach ($rows as $r) if (($r['status'] ?? '') === $status) return $r;
+        return null;
     }
 
     private function ago(string $time): string {

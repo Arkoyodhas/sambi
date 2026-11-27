@@ -1,6 +1,6 @@
 <?php
 $hour = (int) date('G');
-$greet = $hour < 11 ? 'Selamat pagi' : ($hour < 15 ? 'Selamat siang' : ($hour < 18 ? 'Selamat sore' : 'Selamat malam'));
+$greet = $hour < 4 ? 'Selamat malam' : ($hour < 11 ? 'Selamat pagi' : ($hour < 15 ? 'Selamat siang' : ($hour < 18 ? 'Selamat sore' : 'Selamat malam')));
 $firstName = explode(' ', trim($userName))[0] ?: 'Admin';
 $hari = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'][(int) date('w')];
 $actionable = array_values(array_filter($inbox, static fn($i) => empty($i['informational'])));
@@ -22,12 +22,14 @@ foreach ($feed as $f) $feedTypes[$f['type']] = $f['typeLabel'];
     <div>
       <p class="dx-eyebrow" data-testid="dash-date"><?= e($hari . ', ' . tgl_id(date('Y-m-d'))) ?></p>
       <h1 class="dx-title" data-testid="dash-greeting"><?= e($greet) ?>, <?= e($firstName) ?>.</h1>
-      <?php if ($inbox): ?>
+      <?php if ($actionable): ?>
         <?php if ($waiting > 0): ?>
         <p class="dx-lede" data-testid="dash-waiting-summary">Ada <strong><?= $fmt($waiting) ?> hal dari warga</strong> yang menunggu tanggapan Anda.</p>
         <?php else: ?>
         <p class="dx-lede" data-testid="dash-waiting-summary">Semua permintaan warga sudah ditanggapi. <span class="dx-calm">Kerja yang rapi.</span></p>
         <?php endif; ?>
+      <?php elseif ($inbox): ?>
+        <p class="dx-lede">Berikut ringkasan masukan pengunjung dan kegiatan desa hari ini.</p>
       <?php else: ?>
         <p class="dx-lede">Gunakan menu di samping untuk mengelola konten sesuai hak akses Anda.</p>
       <?php endif; ?>
@@ -46,6 +48,7 @@ foreach ($feed as $f) $feedTypes[$f['type']] = $f['typeLabel'];
       <div class="dx-tile-top">
         <span class="dx-chip"><i class="bi <?= e($i['icon']) ?>"></i></span>
         <span class="dx-tile-label"><?= e($i['label']) ?></span>
+        <?php if ($isHot): ?><span class="dx-pulse" aria-hidden="true"></span><?php endif; ?>
         <i class="bi bi-chevron-right dx-tile-go"></i>
       </div>
       <div class="dx-tile-num" data-testid="dash-inbox-<?= e($i['key']) ?>-count"><?= $fmt($p) ?></div>

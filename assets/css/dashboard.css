@@ -25,9 +25,10 @@ body.admin-body:has(.dx) .admin-content,body.admin-body:has(.dx){background:#f5f
 .dx-cta:hover i{transform:translateX(4px)}
 
 /* Kotak masuk */
-.dx-inbox{display:grid;grid-template-columns:repeat(var(--n,4),minmax(0,1fr));gap:14px;margin-bottom:26px}
-@media (max-width:1100px){.dx-inbox{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media (max-width:720px){.dx-inbox{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.dx-inbox{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:26px}
+.dx-inbox > .dx-tile{flex:1 1 190px;min-width:0}
+@media (max-width:1100px){.dx-inbox > .dx-tile{flex-basis:calc(33.333% - 14px)}}
+@media (max-width:720px){.dx-inbox{gap:10px}.dx-inbox > .dx-tile{flex-basis:calc(50% - 10px)}
   .dx-tile{min-height:150px;padding:14px;border-radius:18px}.dx-tile-num{font-size:2.4rem;margin:14px 0 4px}
   .dx-tile-cap{font-size:.8rem}.dx-tile-foot{font-size:.74rem;padding-top:10px}.dx-chip{width:30px;height:30px;border-radius:9px}
   .dx-hero{margin:8px 0 22px}}
@@ -38,7 +39,7 @@ body.admin-body:has(.dx) .admin-content,body.admin-body:has(.dx){background:#f5f
 .dx-tile.t-komentar{--tc:var(--c-komentar)}.dx-tile.t-masukan{--tc:var(--c-masukan)}
 .dx-tile-top{display:flex;align-items:center;gap:10px}
 .dx-chip{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:color-mix(in srgb,var(--tc) 12%,#fff);color:var(--tc);font-size:1.05rem;flex:none}
-.dx-tile-label{font-weight:600;font-size:.92rem;color:var(--ink-2)}
+.dx-tile-label{font-weight:600;font-size:.92rem;color:var(--ink-2);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dx-tile-go{margin-left:auto;color:#b0b0b5;font-size:.85rem;transition:transform .35s var(--ez),color .25s}
 .dx-tile:hover .dx-tile-go{transform:translateX(3px);color:var(--tc)}
 .dx-tile-num{font-size:3.4rem;font-weight:700;letter-spacing:-.05em;line-height:1;margin:22px 0 6px;color:var(--ink);font-variant-numeric:tabular-nums}
@@ -53,7 +54,8 @@ body.admin-body:has(.dx) .admin-content,body.admin-body:has(.dx){background:#f5f
 .dx-tile.is-hot .dx-tile-foot,.dx-tile.is-hot .dx-tile-foot b{color:#a1a1a6}
 .dx-tile.is-hot .dx-chip{background:color-mix(in srgb,var(--tc) 26%,#1d1d1f)}
 .dx-tile.is-hot .dx-tile-cap{color:color-mix(in srgb,var(--tc) 70%,#fff)}
-.dx-tile.is-hot::after{content:"";position:absolute;top:18px;right:42px;width:8px;height:8px;border-radius:50%;background:var(--tc);box-shadow:0 0 0 0 var(--tc);animation:dxPulse 2.2s infinite}
+.dx-pulse{width:8px;height:8px;border-radius:50%;background:var(--tc);flex:none;margin-left:auto;animation:dxPulse 2.2s infinite}
+.dx-pulse + .dx-tile-go{margin-left:6px}
 @keyframes dxPulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--tc) 60%,transparent)}70%{box-shadow:0 0 0 10px transparent}100%{box-shadow:0 0 0 0 transparent}}
 
 /* Grid utama */
@@ -77,7 +79,9 @@ body.admin-body:has(.dx) .admin-content,body.admin-body:has(.dx){background:#f5f
 .dx-muted{color:var(--mute);font-size:.88rem;margin:0}
 
 /* Segmented control */
-.dx-seg{display:inline-flex;background:#ececf0;border-radius:11px;padding:3px;gap:2px;flex-wrap:wrap}
+.dx-seg{display:inline-flex;background:#ececf0;border-radius:11px;padding:3px;gap:2px;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.dx-seg::-webkit-scrollbar{display:none}
+.dx-seg button{white-space:nowrap;flex:none}
 .dx-seg button{border:0;background:transparent;font:inherit;font-size:.8rem;font-weight:500;color:var(--ink-2);padding:6px 12px;border-radius:8px;transition:background-color .25s,color .25s,box-shadow .25s}
 .dx-seg button:hover{color:var(--ink)}
 .dx-seg button.is-on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
