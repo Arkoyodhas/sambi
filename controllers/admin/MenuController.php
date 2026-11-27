@@ -181,7 +181,7 @@ class MenuController extends Controller {
         if ($url === '/') return '/';
 
         // Path internal seperti /berita atau berita/kategori tetap diperbolehkan.
-        if (preg_match('#^/?[a-zA-Z0-9][a-zA-Z0-9/_\-.?=&%#]*$#', $url)) {
+        if (preg_match('~^/?[a-zA-Z0-9][a-zA-Z0-9/_\-.?=&%#]*$~', $url)) {
             return '/' . ltrim($url, '/');
         }
 

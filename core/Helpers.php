@@ -142,6 +142,8 @@ function db(): PDO {
             $mode = (string) $pdo->query('SELECT @@SESSION.sql_mode')->fetchAll(PDO::FETCH_COLUMN)[0];
             $keep = array_diff(array_filter(explode(',', $mode)), ['ONLY_FULL_GROUP_BY', 'NO_ZERO_DATE', 'NO_ZERO_IN_DATE']);
             $pdo->exec('SET SESSION sql_mode = ' . $pdo->quote(implode(',', $keep)));
+            // Zona waktu database mengikuti PHP agar NOW() cocok dengan tanggal yang ditulis aplikasi.
+            $pdo->exec("SET time_zone = '" . date('P') . "'");
         } catch (Throwable $e) {
             error_log('DB sql_mode: ' . $e->getMessage());
         }

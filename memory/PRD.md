@@ -26,3 +26,10 @@ Perbaiki fitur cloning website admin (gagal karena batas waktu request) dan past
 - Ekstensi zip PHP tidak lagi wajib (hanya zlib).
 - Komentar "Desa Dawung" di theme-teal.css, motion.js, diorama.js dan hint config/modules.php dibuat umum.
 - Testing agent iteration_1: backend & frontend 100%.
+
+## Update (Nov 2026) — "Terjadi kesalahan database" di hosting baru setelah ganti password
+- Tidak bisa direproduksi di MariaDB 10.11 / MySQL 8 (strict, user terbatas). error_log hosting asal menunjukkan driver pdo_mysql hosting tidak stabil dengan prepared statement native (2014/2027/2000/HY093).
+- core/Helpers.php db(): EMULATE_PREPARES=true, buffered query, closeCursor di semua helper, sql_mode tanpa ONLY_FULL_GROUP_BY/NO_ZERO_DATE, time_zone DB = zona PHP (berita "sekarang" langsung tampil).
+- core/App.php: error database dicatat ke error_log dengan Kode; admin yang login melihat detail teknis (pengunjung tidak).
+- MenuController: regex URL menu internal diperbaiki (sebelumnya semua link internal ditolak).
+- Testing agent iteration_2 & 3: alur instal clone (MariaDB + MySQL 8) dan regresi tulis/baca situs sumber lulus.
