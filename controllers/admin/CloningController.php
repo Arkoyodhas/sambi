@@ -10,8 +10,8 @@ class CloningController extends Controller {
 
     public array $actions = ['index', 'start', 'step', 'download', 'cancel'];
 
-    private const STEP_SECONDS = 6.0;
-    private const STEP_BYTES = 12 * 1024 * 1024;
+    private const STEP_SECONDS = 4.0;
+    private const STEP_BYTES = 8 * 1024 * 1024;
     private const JOB_TTL = 21600;
 
     private const FEATURE_OPTIONS = [
@@ -88,7 +88,7 @@ class CloningController extends Controller {
     /* ================= Tahap 1: validasi & buat pekerjaan ================= */
     public function start(): void {
         $this->guardPost();
-        if (!class_exists('ZipArchive')) $this->fail('Ekstensi PHP ZIP belum aktif. Aktifkan ekstensi zip di cPanel (Select PHP Version → Extensions).');
+        if (!function_exists('gzdeflate')) $this->fail('Ekstensi PHP zlib belum aktif. Aktifkan melalui cPanel (Select PHP Version → Extensions).');
 
         $f = static fn(string $key, string $default = ''): string => trim((string) ($_POST[$key] ?? $default));
         $nama = $f('village_name');
@@ -123,6 +123,9 @@ class CloningController extends Controller {
             'files_total' => 0,
             'bytes_total' => 0,
             'bytes_done' => 0,
+            'zip_size' => 0,
+            'cd_size' => 0,
+            'zip_count' => 0,
             'disabled' => $disabled,
             'sample' => !empty($_POST['include_sample']),
             'admin' => ['username' => $adminUser, 'email' => $adminEmail, 'hash' => password_hash($adminPass, PASSWORD_BCRYPT)],
@@ -467,31 +470,38 @@ class CloningController extends Controller {
             'controllers/admin/CloningController.php', 'views/admin/cloning.php', 'router.php',
             'config/config.php', 'config/features.php', 'error_log', '.gitconfig', 'README.md',
         ];
-        $excludePrefixes = ['.git/', '.emergent/', '.screenshots/', 'database/', 'plan/', 'storage/', 'uploads/', 'node_modules/', 'test_reports/', 'tests/'];
+        $skipDirs = ['.git', '.emergent', '.screenshots', 'database', 'plan', 'storage', 'uploads', 'node_modules', 'test_reports', 'tests', 'memory'];
 
         $files = [];
         $bytes = 0;
-        $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::LEAVES_ONLY);
-        foreach ($it as $file) {
+        // Folder data/riwayat besar tidak dimasuki sama sekali agar pemindaian cepat.
+        $filter = new RecursiveCallbackFilterIterator(
+            new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS),
+            static function (SplFileInfo $f, $key, RecursiveDirectoryIterator $it) use ($skipDirs): bool {
+                return !($f->isDir() && $it->getSubPath() === '' && in_array($f->getFilename(), $skipDirs, true));
+            }
+        );
+        foreach (new RecursiveIteratorIterator($filter, RecursiveIteratorIterator::LEAVES_ONLY) as $file) {
             if (!$file->isFile() || !$file->isReadable()) continue;
             $rel = str_replace('\\', '/', substr($file->getPathname(), strlen($base) + 1));
             if (in_array($rel, $excludeFiles, true)) continue;
-            foreach ($excludePrefixes as $p) if (str_starts_with($rel, $p)) continue 2;
             if (preg_match('/(^|\/)error_log$|\.(zip|log|bak|tmp)$/i', $rel)) continue;
             $files[] = $rel;
             $bytes += (int) $file->getSize();
         }
 
-        // File pelindung folder storage & uploads (bukan isi data).
+        // File pelindung folder storage & uploads (hanya 2 tingkat, tanpa membaca isi data).
         foreach (['storage', 'uploads'] as $root) {
-            $dirIt = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($base . '/' . $root, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
-            $candidates = [$base . '/' . $root];
-            foreach ($dirIt as $d) if ($d->isDir() && !str_contains(str_replace('\\', '/', $d->getPathname()), '/clone_jobs')) $candidates[] = $d->getPathname();
-            foreach ($candidates as $dir) {
+            $dirs = [$root];
+            foreach (@scandir($base . '/' . $root) ?: [] as $name) {
+                if ($name[0] === '.' || $name === 'clone_jobs') continue;
+                if (is_dir($base . '/' . $root . '/' . $name)) $dirs[] = $root . '/' . $name;
+            }
+            foreach ($dirs as $dir) {
                 foreach (['.htaccess', 'index.html', 'index.php', '.gitkeep'] as $guard) {
-                    if (is_file($dir . '/' . $guard)) {
-                        $files[] = str_replace('\\', '/', substr($dir . '/' . $guard, strlen($base) + 1));
-                        $bytes += (int) filesize($dir . '/' . $guard);
+                    if (is_file($base . '/' . $dir . '/' . $guard)) {
+                        $files[] = $dir . '/' . $guard;
+                        $bytes += (int) filesize($base . '/' . $dir . '/' . $guard);
                     }
                 }
             }
@@ -503,8 +513,7 @@ class CloningController extends Controller {
             $bytes += (int) filesize($base . '/' . $rel);
         }
 
-        $files = array_values(array_unique($files));
-        return [$files, $bytes];
+        return [array_values(array_unique($files)), $bytes];
     }
 
     private function designUploads(): array {
@@ -528,10 +537,10 @@ class CloningController extends Controller {
     private function stepFiles(array &$state, float $deadline): void {
         $dir = $this->jobDir($state['id']);
         $files = json_decode((string) file_get_contents($dir . '/files.json'), true) ?: [];
-        $zip = $this->openZip($dir . '/package.zip');
         $base = realpath(BASE_PATH);
         $batchBytes = 0;
         $total = count($files);
+        $zip = $this->zipOpen($state);
 
         while ($state['file_index'] < $total && microtime(true) < $deadline && $batchBytes < self::STEP_BYTES) {
             $rel = $files[$state['file_index']];
@@ -541,21 +550,18 @@ class CloningController extends Controller {
             $size = (int) filesize($path);
 
             if ($rel === 'core/App.php') {
-                $zip->addFromString($rel, (string) preg_replace("/^.*'cloning'\\s*=>.*\\R/m", '', (string) file_get_contents($path)));
+                $this->zipAddString($zip, $rel, (string) preg_replace("/^.*'cloning'\\s*=>.*\\R/m", '', (string) file_get_contents($path)));
             } elseif ($rel === 'views/layouts/admin_header.php') {
                 $layout = (string) file_get_contents($path);
                 $layout = (string) preg_replace("/\\s*<\\?php if \\(Auth::isSuperAdmin\\(\\) && is_file\\(BASE_PATH \\. '\\/controllers\\/admin\\/CloningController\\.php'\\)\\): \\?>.*?<\\?php endif; \\?>/s", '', $layout);
-                $zip->addFromString($rel, $layout);
-            } elseif (!$zip->addFile($path, $rel)) {
-                throw new RuntimeException('Tidak dapat menambahkan file ' . $rel);
-            }
-            if (in_array(strtolower(pathinfo($rel, PATHINFO_EXTENSION)), self::STORE_EXT, true) && method_exists($zip, 'setCompressionName')) {
-                $zip->setCompressionName($rel, ZipArchive::CM_STORE);
+                $this->zipAddString($zip, $rel, $layout);
+            } else {
+                $this->zipAddFile($zip, $path, $rel);
             }
             $batchBytes += $size;
             $state['bytes_done'] += $size;
         }
-        if (!$zip->close()) throw new RuntimeException('Gagal menyimpan berkas ZIP sementara (cek sisa kuota disk hosting).');
+        $this->zipCommit($zip, $state);
 
         $state['message'] = 'Mengemas file ' . min($state['file_index'], $total) . '/' . $total;
         if ($state['file_index'] >= $total) {
@@ -566,13 +572,13 @@ class CloningController extends Controller {
 
     private function stepFinalize(array &$state): void {
         $dir = $this->jobDir($state['id']);
-        $zip = $this->openZip($dir . '/package.zip');
+        $zip = $this->zipOpen($state);
 
         $features = array_fill_keys(array_keys(self::FEATURE_OPTIONS), true);
         foreach ($state['disabled'] as $feature) $features[$feature] = false;
-        $zip->addFromString('config/features.php', "<?php\n\n/** Modul aktif pada paket hasil cloning. Ubah ke true untuk mengaktifkan kembali. */\nreturn " . var_export($features, true) . ";\n");
+        $this->zipAddString($zip, 'config/features.php', "<?php\n\n/** Modul aktif pada paket hasil cloning. Ubah ke true untuk mengaktifkan kembali. */\nreturn " . var_export($features, true) . ";\n");
 
-        $zip->addFromString('config/config.php', "<?php\nreturn [\n" .
+        $this->zipAddString($zip, 'config/config.php', "<?php\nreturn [\n" .
             "    'db_host' => 'localhost',\n" .
             "    'db_name' => '',\n" .
             "    'db_user' => '',\n" .
@@ -591,12 +597,12 @@ class CloningController extends Controller {
             "    'max_upload_video' => 25 * 1024 * 1024,\n" .
             "];\n");
 
-        if (!$zip->addFile($dir . '/desa_db.sql', 'database/desa_db.sql')) throw new RuntimeException('File SQL tidak dapat dimasukkan ke paket.');
-        foreach (['storage/cache', 'storage/backups', 'uploads/tmp', 'uploads/cache', 'uploads/protected'] as $empty) $zip->addEmptyDir($empty);
+        $this->zipAddFile($zip, $dir . '/desa_db.sql', 'database/desa_db.sql');
+        foreach (['storage/cache/', 'storage/backups/', 'uploads/tmp/', 'uploads/cache/', 'uploads/protected/'] as $empty) $this->zipAddString($zip, $empty, '');
 
         $nama = $state['ident']['village_name'];
         $labels = array_map(static fn($f) => self::FEATURE_OPTIONS[$f][0], $state['disabled']);
-        $zip->addFromString('MULAI-DISINI.txt',
+        $this->zipAddString($zip, 'MULAI-DISINI.txt',
             "WEBSITE " . mb_strtoupper($nama) . "\n" .
             "==============================================\n" .
             "1. Upload file ZIP ini ke public_html lalu Extract (index.php & .htaccess harus langsung di public_html).\n" .
@@ -614,27 +620,113 @@ class CloningController extends Controller {
             "FITUR YANG DINONAKTIFKAN\n" . ($labels ? '- ' . implode("\n- ", $labels) : 'Tidak ada; semua fitur aktif.') . "\n" .
             "Fitur dapat diaktifkan kembali melalui config/features.php (ubah nilainya menjadi true).\n"
         );
-        if (!$zip->close()) throw new RuntimeException('Gagal menyelesaikan berkas ZIP.');
+        $this->zipCommit($zip, $state);
+        $this->zipWriteCentralDirectory($state);
 
-        $check = new ZipArchive();
-        if ($check->open($dir . '/package.zip') !== true || $check->locateName('index.php') === false || $check->locateName('database/desa_db.sql') === false) {
-            throw new RuntimeException('Verifikasi paket ZIP gagal.');
-        }
-        $check->close();
         @unlink($dir . '/desa_db.sql');
         @unlink($dir . '/files.json');
+        @unlink($dir . '/central.bin');
 
         $state['phase'] = 'done';
         $state['message'] = 'Paket cloning siap diunduh.';
         log_activity('clone', 'sistem', 'Generate cloning website untuk ' . $nama . '; fitur nonaktif: ' . ($state['disabled'] ? implode(', ', $state['disabled']) : 'tidak ada'));
     }
 
-    private function openZip(string $file): ZipArchive {
-        $zip = new ZipArchive();
-        $flags = is_file($file) ? 0 : ZipArchive::CREATE;
-        $res = $zip->open($file, $flags);
-        if ($res !== true) throw new RuntimeException('Berkas ZIP sementara tidak dapat dibuka (kode ' . $res . ').');
-        return $zip;
+    /* ===== Penulis ZIP tambah-di-akhir: setiap tahap hanya menulis file baru, tidak menulis ulang arsip ===== */
+    private function zipOpen(array $state): array {
+        $dir = $this->jobDir($state['id']);
+        $fh = fopen($dir . '/package.zip', 'c+b');
+        $cd = fopen($dir . '/central.bin', 'c+b');
+        if (!$fh || !$cd) throw new RuntimeException('Berkas ZIP sementara tidak dapat ditulis (cek izin folder storage).');
+        // Pulihkan posisi terakhir yang sukses bila tahap sebelumnya terputus di tengah jalan.
+        ftruncate($fh, (int) $state['zip_size']);
+        ftruncate($cd, (int) $state['cd_size']);
+        fseek($fh, 0, SEEK_END);
+        fseek($cd, 0, SEEK_END);
+        return ['fh' => $fh, 'cd' => $cd, 'count' => (int) $state['zip_count']];
+    }
+
+    private function zipCommit(array &$zip, array &$state): void {
+        fflush($zip['fh']);
+        fflush($zip['cd']);
+        $state['zip_size'] = ftell($zip['fh']);
+        $state['cd_size'] = ftell($zip['cd']);
+        $state['zip_count'] = $zip['count'];
+        fclose($zip['fh']);
+        fclose($zip['cd']);
+    }
+
+    private function zipAddString(array &$zip, string $name, string $data): void {
+        $isDir = str_ends_with($name, '/');
+        $crc = $isDir ? 0 : crc32($data);
+        $method = 0;
+        $payload = $data;
+        if (!$isDir && strlen($data) > 64 && !in_array(strtolower(pathinfo($name, PATHINFO_EXTENSION)), self::STORE_EXT, true)) {
+            $deflated = gzdeflate($data, 6);
+            if ($deflated !== false && strlen($deflated) < strlen($data)) { $payload = $deflated; $method = 8; }
+        }
+        $offset = $this->zipLocalHeader($zip, $name, $method, $crc, strlen($payload), strlen($data));
+        if ($payload !== '' && fwrite($zip['fh'], $payload) !== strlen($payload)) throw new RuntimeException('Disk hosting penuh saat menulis ' . $name);
+        $this->zipCentralEntry($zip, $name, $method, $crc, strlen($payload), strlen($data), $offset, $isDir);
+    }
+
+    private function zipAddFile(array &$zip, string $path, string $name): void {
+        $size = (int) filesize($path);
+        if ($size <= 8 * 1024 * 1024) {
+            $data = file_get_contents($path);
+            if ($data === false) throw new RuntimeException('File tidak dapat dibaca: ' . $name);
+            $this->zipAddString($zip, $name, $data);
+            return;
+        }
+        // File besar (mis. video hero) disalin langsung tanpa kompresi agar cepat dan hemat memori.
+        $crc = (int) hexdec(hash_file('crc32b', $path));
+        $offset = $this->zipLocalHeader($zip, $name, 0, $crc, $size, $size);
+        $in = fopen($path, 'rb');
+        if (!$in) throw new RuntimeException('File tidak dapat dibaca: ' . $name);
+        $copied = stream_copy_to_stream($in, $zip['fh']);
+        fclose($in);
+        if ($copied !== $size) throw new RuntimeException('Disk hosting penuh saat menyalin ' . $name);
+        $this->zipCentralEntry($zip, $name, 0, $crc, $size, $size, $offset, false);
+    }
+
+    private function zipLocalHeader(array &$zip, string $name, int $method, int $crc, int $csize, int $usize): int {
+        if ($usize > 0xFFFFFFFF - 1024 || ftell($zip['fh']) > 0xFFFFFFFF - $csize - 1024) throw new RuntimeException('Ukuran paket melebihi 4 GB.');
+        [$time, $date] = $this->dosTime();
+        $offset = ftell($zip['fh']);
+        fwrite($zip['fh'], pack('VvvvvvVVVvv', 0x04034b50, 20, 0x0800, $method, $time, $date, $crc, $csize, $usize, strlen($name), 0) . $name);
+        return $offset;
+    }
+
+    private function zipCentralEntry(array &$zip, string $name, int $method, int $crc, int $csize, int $usize, int $offset, bool $isDir): void {
+        [$time, $date] = $this->dosTime();
+        $attr = $isDir ? (0x10 | (040755 << 16)) : (0100644 << 16);
+        fwrite($zip['cd'], pack('VvvvvvvVVVvvvvvVV', 0x02014b50, 0x0314, 20, 0x0800, $method, $time, $date, $crc, $csize, $usize, strlen($name), 0, 0, 0, 0, $attr, $offset) . $name);
+        $zip['count']++;
+    }
+
+    private function zipWriteCentralDirectory(array $state): void {
+        $dir = $this->jobDir($state['id']);
+        $fh = fopen($dir . '/package.zip', 'c+b');
+        $cd = fopen($dir . '/central.bin', 'rb');
+        if (!$fh || !$cd) throw new RuntimeException('Berkas ZIP sementara tidak dapat dibuka.');
+        ftruncate($fh, (int) $state['zip_size']);
+        fseek($fh, 0, SEEK_END);
+        $cdOffset = ftell($fh);
+        $cdSize = (int) stream_copy_to_stream($cd, $fh);
+        fclose($cd);
+        if ($cdSize !== (int) $state['cd_size']) throw new RuntimeException('Gagal menulis daftar isi ZIP.');
+        $count = (int) $state['zip_count'];
+        if ($count > 0xFFFF) throw new RuntimeException('Jumlah file melebihi batas ZIP (65.535).');
+        fwrite($fh, pack('VvvvvVVv', 0x06054b50, 0, 0, $count, $count, $cdSize, $cdOffset, 0));
+        fclose($fh);
+    }
+
+    private function dosTime(): array {
+        $t = getdate();
+        return [
+            ($t['hours'] << 11) | ($t['minutes'] << 5) | intdiv($t['seconds'], 2),
+            (max(0, $t['year'] - 1980) << 9) | ($t['mon'] << 5) | $t['mday'],
+        ];
     }
 
     /* ================= Utilitas pekerjaan ================= */
