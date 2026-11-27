@@ -1,0 +1,11 @@
+# File privat yang diunggah melalui aplikasi
+/uploads/protected/*
+!/uploads/protected/.htaccess
+!/uploads/protected/index.html
+.env
+.env.*
+*.env
+credentials.json
+*.pem
+*.key
+.credentials
