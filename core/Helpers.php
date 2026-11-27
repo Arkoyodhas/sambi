@@ -126,11 +126,22 @@ function db(): PDO {
     static $pdo = null;
     if ($pdo === null) {
         $dsn = 'mysql:host=' . cfg('db_host') . ';dbname=' . cfg('db_name') . ';charset=utf8mb4';
-        $pdo = new PDO($dsn, cfg('db_user'), cfg('db_pass'), [
+        $options = [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false,
-        ]);
+        ];
+        // Hosting tertentu memakai driver MySQL tanpa buffer default; paksa buffer agar query beruntun aman.
+        if (defined('PDO::MYSQL_ATTR_USE_BUFFERED_QUERY')) $options[PDO::MYSQL_ATTR_USE_BUFFERED_QUERY] = true;
+        $pdo = new PDO($dsn, cfg('db_user'), cfg('db_pass'), $options);
+        // Samakan perilaku MySQL 8 / MariaDB baru dengan hosting asal (tanpa ONLY_FULL_GROUP_BY & larangan tanggal nol).
+        try {
+            $mode = (string) $pdo->query('SELECT @@SESSION.sql_mode')->fetchAll(PDO::FETCH_COLUMN)[0];
+            $keep = array_diff(array_filter(explode(',', $mode)), ['ONLY_FULL_GROUP_BY', 'NO_ZERO_DATE', 'NO_ZERO_IN_DATE']);
+            $pdo->exec('SET SESSION sql_mode = ' . $pdo->quote(implode(',', $keep)));
+        } catch (Throwable $e) {
+            error_log('DB sql_mode: ' . $e->getMessage());
+        }
     }
     return $pdo;
 }
@@ -139,18 +150,18 @@ function db_all(string $sql, array $p = []): array {
     $st = db()->prepare($sql); $st->execute($p); return $st->fetchAll();
 }
 function db_row(string $sql, array $p = []) {
-    $st = db()->prepare($sql); $st->execute($p); $r = $st->fetch(); return $r ?: null;
+    $st = db()->prepare($sql); $st->execute($p); $r = $st->fetch(); $st->closeCursor(); return $r ?: null;
 }
 function db_val(string $sql, array $p = []) {
-    $st = db()->prepare($sql); $st->execute($p); return $st->fetchColumn();
+    $st = db()->prepare($sql); $st->execute($p); $v = $st->fetchColumn(); $st->closeCursor(); return $v;
 }
 function db_exec(string $sql, array $p = []): int {
-    $st = db()->prepare($sql); $st->execute($p); return $st->rowCount();
+    $st = db()->prepare($sql); $st->execute($p); $n = $st->rowCount(); $st->closeCursor(); return $n;
 }
 function db_insert(string $table, array $data): int {
     $cols = array_keys($data);
     $sql = "INSERT INTO `$table` (`" . implode('`,`', $cols) . "`) VALUES (" . implode(',', array_fill(0, count($cols), '?')) . ")";
-    db()->prepare($sql)->execute(array_values($data));
+    $st = db()->prepare($sql); $st->execute(array_values($data)); $st->closeCursor();
     return (int) db()->lastInsertId();
 }
 function db_update(string $table, array $data, string $where, array $wp = []): int {

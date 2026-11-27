@@ -160,8 +160,26 @@ class App {
         } catch (PDOException $ex) {
             http_response_code(500);
             if (cfg('debug')) throw $ex;
-            echo '<div style="font-family:sans-serif;padding:40px;text-align:center"><h2>Terjadi kesalahan database</h2><p>Periksa konfigurasi database di config/config.php dan pastikan file SQL sudah diimport.</p></div>';
+            $this->renderDbError($ex);
         }
+    }
+
+    /** Catat penyebab asli ke error_log; tampilkan detail teknis hanya untuk admin yang sedang login. */
+    private function renderDbError(PDOException $ex): void {
+        $where = str_replace(BASE_PATH . '/', '', $ex->getFile()) . ':' . $ex->getLine();
+        $code = strtoupper(substr(sha1($ex->getMessage() . $where), 0, 8));
+        error_log('DB error [' . $code . '] ' . ($_SERVER['REQUEST_URI'] ?? '') . ' | ' . $ex->getMessage() . ' @ ' . $where);
+        $detail = '';
+        if (!empty($_SESSION['user_id'])) {
+            $trace = [];
+            foreach (array_slice($ex->getTrace(), 0, 4) as $t) {
+                if (!empty($t['file'])) $trace[] = str_replace(BASE_PATH . '/', '', $t['file']) . ':' . ($t['line'] ?? '?');
+            }
+            $detail = '<div style="max-width:760px;margin:20px auto 0;text-align:left;background:#fff4f4;border:1px solid #f3c2c2;border-radius:8px;padding:14px;font:13px/1.5 monospace;color:#7a1f1f;word-break:break-word">'
+                . '<strong>Detail teknis (hanya terlihat oleh admin):</strong><br>' . htmlspecialchars($ex->getMessage(), ENT_QUOTES, 'UTF-8')
+                . '<br>Lokasi: ' . htmlspecialchars($where . ($trace ? ' ← ' . implode(' ← ', $trace) : ''), ENT_QUOTES, 'UTF-8') . '</div>';
+        }
+        echo '<div style="font-family:sans-serif;padding:40px;text-align:center"><h2>Terjadi kesalahan database</h2><p>Periksa konfigurasi database di config/config.php dan pastikan file SQL sudah diimport.</p><p style="color:#888;font-size:13px">Kode: ' . $code . '</p>' . $detail . '</div>';
     }
 
     private function segments(): array {

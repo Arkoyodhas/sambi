@@ -256,7 +256,7 @@ class CloningController extends Controller {
     }
 
     private function tableSql(string $table, array $state): string {
-        $row = db()->query('SHOW CREATE TABLE `' . $table . '`')->fetch(PDO::FETCH_NUM);
+        $row = db()->query('SHOW CREATE TABLE `' . $table . '`')->fetchAll(PDO::FETCH_NUM)[0] ?? [];
         $create = preg_replace('/\sAUTO_INCREMENT=\d+/i', '', (string) ($row[1] ?? ''));
         $create = preg_replace('/\sDEFINER=`[^`]*`@`[^`]*`/i', '', $create);
         $sql = "\n-- ----------------------------------------\n-- Tabel `$table`\n-- ----------------------------------------\n";
