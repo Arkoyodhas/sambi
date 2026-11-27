@@ -1,4 +1,4 @@
-/* Desa Dawung — motion layer: Lenis smooth scroll + GSAP ScrollTrigger reveals,
+/* Website Desa — motion layer: Lenis smooth scroll + GSAP ScrollTrigger reveals,
    hero parallax, odometer stats, self-drawing flow line, image parallax, tilt, filter grid, FAQ. */
 (function () {
   'use strict';

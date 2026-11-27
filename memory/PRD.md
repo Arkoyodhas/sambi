@@ -19,3 +19,10 @@ Perbaiki fitur cloning website admin (gagal karena batas waktu request) dan past
 ## Backlog
 - P1: Isi nomor WhatsApp admin baru di form cloning (saat ini diminta di login pertama).
 - P2: Unggah logo desa baru langsung dari form cloning.
+
+## Update (Nov 2026) — Request Timeout di hosting LiteSpeed
+- Penyebab: ZipArchive membuka & menulis ulang seluruh arsip di setiap tahap (makin lama makin berat) + pemindaian folder .git/uploads/storage penuh.
+- Perbaikan: penulis ZIP tambah-di-akhir (tiap tahap ≤4 dtk/≤8MB, terukur <0,2 dtk per tahap dengan video 30MB), pemindaian folder dipangkas, tahap SQL & ZIP aman diulang bila terputus (ftruncate ke posisi terakhir), file sementara dihapus setelah status selesai tersimpan.
+- Ekstensi zip PHP tidak lagi wajib (hanya zlib).
+- Komentar "Desa Dawung" di theme-teal.css, motion.js, diorama.js dan hint config/modules.php dibuat umum.
+- Testing agent iteration_1: backend & frontend 100%.

@@ -298,7 +298,7 @@ return [
             return $err;
         },
         'fields' => [
-            ['name' => 'name', 'label' => 'Nama Kontak', 'type' => 'text', 'required' => true, 'maxlength' => 100, 'hint' => 'Contoh: Ambulans Desa Dawung, Polsek Sambirejo, Koramil Sambirejo'],
+            ['name' => 'name', 'label' => 'Nama Kontak', 'type' => 'text', 'required' => true, 'maxlength' => 100, 'hint' => 'Contoh: Ambulans Desa, Polsek, Koramil'],
             ['name' => 'category', 'label' => 'Jenis Layanan', 'type' => 'select', 'default' => 'ambulans', 'options' => emergency_categories()],
             ['name' => 'phone', 'label' => 'Nomor Telepon', 'type' => 'text', 'required' => true, 'maxlength' => 20, 'hint' => 'Nomor pendek (112, 110) atau nomor HP/kantor.'],
             ['name' => 'has_whatsapp', 'label' => 'Bisa dihubungi lewat WhatsApp', 'type' => 'checkbox'],

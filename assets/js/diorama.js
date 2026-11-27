@@ -1,4 +1,4 @@
-/* Desa Dawung — clay-style 3D mini diorama (pendopo, trees, fish pond).
+/* Website Desa — clay-style 3D mini diorama (pendopo, trees, fish pond).
    Desktop + pointer halus saja; ponsel tetap memakai gambar diam. */
 (function () {
   'use strict';

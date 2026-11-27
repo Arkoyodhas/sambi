@@ -126,6 +126,7 @@ class CloningController extends Controller {
             'zip_size' => 0,
             'cd_size' => 0,
             'zip_count' => 0,
+            'sql_size' => 0,
             'disabled' => $disabled,
             'sample' => !empty($_POST['include_sample']),
             'admin' => ['username' => $adminUser, 'email' => $adminEmail, 'hash' => password_hash($adminPass, PASSWORD_BCRYPT)],
@@ -157,7 +158,7 @@ class CloningController extends Controller {
         file_put_contents($dir . '/files.json', json_encode($files, JSON_UNESCAPED_SLASHES));
         $state['files_total'] = count($files);
         $state['bytes_total'] = $bytes;
-        file_put_contents($dir . '/desa_db.sql', $this->sqlHeader($nama));
+        $state['sql_size'] = (int) file_put_contents($dir . '/desa_db.sql', $this->sqlHeader($nama));
         $this->saveState($state);
 
         $this->json(['ok' => true, 'job' => $id, 'progress' => 1, 'message' => $state['message'], 'done' => false]);
@@ -181,6 +182,9 @@ class CloningController extends Controller {
             $this->fail('Gagal pada tahap "' . $state['phase'] . '": ' . $e->getMessage());
         }
         $this->saveState($state);
+        if ($state['phase'] === 'done') {
+            foreach (['desa_db.sql', 'files.json', 'central.bin'] as $tmp) @unlink($this->jobDir($state['id']) . '/' . $tmp);
+        }
 
         $this->json([
             'ok' => true,
@@ -223,8 +227,11 @@ class CloningController extends Controller {
     /* ================= Database ================= */
     private function stepSql(array &$state, float $deadline): void {
         $sqlFile = $this->jobDir($state['id']) . '/desa_db.sql';
-        $out = fopen($sqlFile, 'ab');
+        $out = fopen($sqlFile, 'c+b');
         if (!$out) throw new RuntimeException('File SQL sementara tidak dapat ditulis.');
+        // Buang tulisan setengah jadi bila tahap sebelumnya terputus.
+        ftruncate($out, (int) $state['sql_size']);
+        fseek($out, 0, SEEK_END);
         $tables = $state['tables'];
         while ($state['table_index'] < count($tables) && microtime(true) < $deadline) {
             $table = $tables[$state['table_index']];
@@ -238,6 +245,8 @@ class CloningController extends Controller {
             $state['phase'] = 'files';
             $state['message'] = 'Database siap. Mengemas file website...';
         }
+        fflush($out);
+        $state['sql_size'] = ftell($out);
         fclose($out);
     }
 
@@ -622,10 +631,6 @@ class CloningController extends Controller {
         );
         $this->zipCommit($zip, $state);
         $this->zipWriteCentralDirectory($state);
-
-        @unlink($dir . '/desa_db.sql');
-        @unlink($dir . '/files.json');
-        @unlink($dir . '/central.bin');
 
         $state['phase'] = 'done';
         $state['message'] = 'Paket cloning siap diunduh.';
