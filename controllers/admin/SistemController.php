@@ -129,7 +129,7 @@ class SistemController extends Controller {
         gzwrite($gz, "-- Backup " . setting('village_name') . " " . date('c') . "\nSET NAMES utf8mb4;" . $end . "SET FOREIGN_KEY_CHECKS=0;" . $end);
         foreach ($pdo->query('SHOW FULL TABLES WHERE Table_type = "BASE TABLE"')->fetchAll(PDO::FETCH_NUM) as [$table]) {
             $q = '`' . str_replace('`', '``', $table) . '`';
-            $create = $pdo->query("SHOW CREATE TABLE $q")->fetch(PDO::FETCH_NUM)[1];
+            $create = $pdo->query("SHOW CREATE TABLE $q")->fetchAll(PDO::FETCH_NUM)[0][1];
             gzwrite($gz, "DROP TABLE IF EXISTS $q;" . $end . $create . ";" . $end);
             $cols = [];
             foreach ($pdo->query("SHOW COLUMNS FROM $q")->fetchAll(PDO::FETCH_ASSOC) as $c) {

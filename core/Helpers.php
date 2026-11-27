@@ -129,7 +129,10 @@ function db(): PDO {
         $options = [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false,
+            // Prepared statement emulasi: driver MySQL di sebagian hosting (libmysqlclient) tidak stabil
+            // dengan prepared statement native (error 2014/2027/HY093 pada query beruntun).
+            PDO::ATTR_EMULATE_PREPARES => true,
+            PDO::ATTR_STRINGIFY_FETCHES => false,
         ];
         // Hosting tertentu memakai driver MySQL tanpa buffer default; paksa buffer agar query beruntun aman.
         if (defined('PDO::MYSQL_ATTR_USE_BUFFERED_QUERY')) $options[PDO::MYSQL_ATTR_USE_BUFFERED_QUERY] = true;
@@ -168,7 +171,8 @@ function db_update(string $table, array $data, string $where, array $wp = []): i
     $sets = implode(',', array_map(fn($c) => "`$c`=?", array_keys($data)));
     $st = db()->prepare("UPDATE `$table` SET $sets WHERE $where");
     $st->execute(array_merge(array_values($data), $wp));
-    return $st->rowCount();
+    $n = $st->rowCount(); $st->closeCursor();
+    return $n;
 }
 function paginate(string $sql, array $p = [], int $perPage = 15): array {
     $page = max(1, (int) ($_GET['page'] ?? 1));

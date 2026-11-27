@@ -173,7 +173,8 @@ class App {
         if (!empty($_SESSION['user_id'])) {
             $trace = [];
             foreach (array_slice($ex->getTrace(), 0, 4) as $t) {
-                if (!empty($t['file'])) $trace[] = str_replace(BASE_PATH . '/', '', $t['file']) . ':' . ($t['line'] ?? '?');
+                $loc = !empty($t['file']) ? str_replace(BASE_PATH . '/', '', $t['file']) . ':' . ($t['line'] ?? '?') : '';
+                if ($loc !== '' && $loc !== $where && !in_array($loc, $trace, true)) $trace[] = $loc;
             }
             $detail = '<div style="max-width:760px;margin:20px auto 0;text-align:left;background:#fff4f4;border:1px solid #f3c2c2;border-radius:8px;padding:14px;font:13px/1.5 monospace;color:#7a1f1f;word-break:break-word">'
                 . '<strong>Detail teknis (hanya terlihat oleh admin):</strong><br>' . htmlspecialchars($ex->getMessage(), ENT_QUOTES, 'UTF-8')

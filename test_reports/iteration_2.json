@@ -1,0 +1,29 @@
+{
+  "summary": "Backend-only test of the clone-install fix for the 'Terjadi kesalahan database after forced password change' report. I built fresh clone packages from the source site (http://localhost:8080) via cloning start/step/download, 2 builds: without sample data and with include_sample=1, both valid zips. I installed each on MariaDB 10.11.19 (localhost socket) and on MySQL 8.0.40 (127.0.0.1;port=3307, global sql_mode ONLY_FULL_GROUP_BY+STRICT+NO_ZERO_DATE), with debug=false and a DB user that only has privileges on its own database. Full flow on all 4 installs: real captcha login, forced redirect to /admin/akun, POST /admin/akun/simpan, redirect to /admin/dashboard with 200 and no DB error, logout, login with the new password, 28 admin menus and public pages all 200 with no 'kesalahan database'. ALL PASS. Error page: with the complaints table renamed, a logged-in admin gets a 500 page with 'Detail teknis (hanya terlihat oleh admin)', the SQLSTATE 42S02 message, the location and 'Kode: XXXXXXXX'. An anonymous visitor on /pengaduan gets only the generic message and the Kode, with no SQL detail. error_log records '[DB error [CODE] uri | msg @ file:line]' and the codes match. Passed on both MySQL 8 and MariaDB, and the table was restored. Regression on the source site: 12 public pages and 29 admin pages (including cloning) are 200 with no DB error. The customer's own hosting could not be reached, so its actual failing query is still unconfirmed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "core/Helpers.php db_update()", "issue": "Unlike db_row/db_val/db_exec/db_insert, it does not call $st->closeCursor(). AkunController::simpan uses db_update and then log_activity (db_insert). On drivers that are sensitive to statement state this is the remaining gap in the fix. Add closeCursor for consistency."},
+      {"endpoint": "core/App.php renderDbError()", "issue": "Cosmetic: the trace repeats the first location (e.g. 'Lokasi: core/Helpers.php:156 ← core/Helpers.php:156 ← DashboardController.php:35'). Skip trace frames whose file:line equals $where."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_clone_install_flow.py", "/app/backend/tests/test_clone_error_page.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Optional: add closeCursor() to db_update() for consistency with the other helpers.",
+    "Optional: remove the duplicate first trace frame in the renderDbError detail.",
+    "Ask the customer to reproduce once on the new build. The page now shows the SQLSTATE detail and Kode to the logged-in admin, and the hosting error_log has the matching '[DB error [CODE] ...]' line, which will confirm the real cause."
+  ],
+  "critical_code_review_comments": [
+    "Evidence: /app/error_log, committed from the source cPanel host, shows repeated driver-level errors in 'Visitor track': 2014 'pending result sets' / 'other unbuffered queries are active', 2027 'Received malformed packet', 2000 'Unknown error', and HY093 'Invalid parameter number' on a correct 13-placeholder INSERT. This points to a pdo_mysql build on that hosting (likely libmysqlclient, not mysqlnd, as on CloudLinux/LiteSpeed) that is fragile with native prepares (ATTR_EMULATE_PREPARES=false). The buffered-query and closeCursor changes target this. If the customer still fails, the next step is to set PDO::ATTR_EMULATE_PREPARES => true, as a fallback or config option. This is not reproducible locally because local PHP uses mysqlnd.",
+    "No MySQL-8-only or MariaDB-only SQL found: no CTE, window or JSON functions. The dump uses utf8mb4_unicode_ci and InnoDB and is portable. The GENERATED VIRTUAL column in idm_data needs MySQL >=5.7 or MariaDB >=10.2.",
+    "SistemController backup calls $pdo->query('SHOW CREATE TABLE')->fetch() without closeCursor. It is a single row so harmless when buffered, but on an unbuffered driver it would desync the same way."
+  ],
+  "updated_files": ["/app/backend/tests/test_clone_install_flow.py", "/app/backend/tests/test_clone_error_page.py"],
+  "success_rate": {"backend": "100% (4/4 install flows, 4/4 error-page tests, source regression all 200)", "frontend": "not tested (backend only requested)"},
+  "seed_data_creation": "Test DBs t1_maria (MariaDB) and t1_m8 (MySQL 8) with users t1u_*: created and dropped. Clone jobs removed, storage/cache restored with git checkout, uploads clean. All activity_logs rows with action='clone' deleted from dawungsr_dbdesa (6 rows; some may have been from the main agent's runs, as instructed). No app code modified.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Helper scripts: /root/t1_build.sh <zip> <sample0|1> builds a clone package from :8080. /root/t1_install.sh <db> <port> <maria|m8> <zip> installs it with debug=false and a DB user limited to its own database, and starts php -S logging to /root/php<port>.err. Run CLONE_PORTS=8201,8202 pytest backend/tests/test_clone_install_flow.py (installs must be fresh: password rahasia123). The error-page test needs CLONE_PORT/CLONE_PASS=TEST_Baru12345/CLONE_ENGINE/CLONE_DB. Note: public /faq is not a route (404 is expected).",
+  "rca of the issue": "Could not reproduce on MariaDB 10.11 or MySQL 8.0.40 (strict + ONLY_FULL_GROUP_BY, limited user, with and without sample data). The most likely cause, from the source host's error_log, is the hosting's pdo_mysql driver desyncing with native prepared statements (errors 2014/2027/2000/HY093). The applied fix (buffered queries + closeCursor + relaxed sql_mode) addresses this. The new admin-only error detail will confirm or refute it on the customer's hosting. Fallback mitigation: ATTR_EMULATE_PREPARES=true."
+}
