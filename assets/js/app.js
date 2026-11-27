@@ -1259,10 +1259,14 @@
       .catch(() => {});
   }
   if (!window.DESA_ADMIN) {
-    afterFirstInteraction(() => {
+    const startExperience = () => {
       fetchExperience();
       setInterval(fetchExperience, 120000);
-    });
+    };
+    // Musik harus siap sebelum interaksi pertama, supaya tap/klik pertama pengunjung langsung
+    // menjadi izin putar (browser hanya mengizinkan play() di dalam event interaksi yang sah).
+    if (window.DESA && DESA.music && DESA.music.enabled) startExperience();
+    else afterFirstInteraction(startExperience);
   }
 
   /* ---- Music player ---- */
@@ -1285,7 +1289,7 @@
     if (state.audio) { state.audio.pause(); state.audio.src = ''; state.audio = null; }
 
     const audio = new Audio();
-    audio.preload = 'auto';
+    audio.preload = music.autoplay !== false ? 'auto' : 'metadata';
     audio.playsInline = true;
     audio.loop = !!music.loop;
     audio.volume = Math.min(1, Math.max(0, Number(music.volume || 50) / 100));
@@ -1341,16 +1345,38 @@
       });
     };
 
+    // Event yang diakui browser sebagai aktivasi pengguna (mobile: touchend/pointerup/click).
+    const unlockEvents = ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'];
     const cleanupUnlock = () => {
-      window.removeEventListener('pointerdown', unlockPlayback, true);
-      window.removeEventListener('touchend', unlockPlayback, true);
-      window.removeEventListener('keydown', unlockPlayback, true);
+      unlockEvents.forEach((name) => window.removeEventListener(name, unlockPlayback, true));
       retryAdded = false;
     };
 
-    const unlockPlayback = () => {
+    const unlockPlayback = (ev) => {
+      if (ev && ev.target && ev.target.closest && ev.target.closest('.mp-close, .mp-mute')) return;
+      if (!audio.paused) { cleanupUnlock(); return; }
       playAudio().then(cleanupUnlock).catch(() => {});
     };
+
+    // Lanjutkan dari detik terakhir saat pengunjung pindah halaman, agar musik terasa tidak terputus.
+    const posKey = 'desa_music_pos';
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(posKey) || 'null');
+      if (saved && String(saved.id) === String(music.id) && saved.t > 1) {
+        audio.addEventListener('loadedmetadata', () => {
+          if (isFinite(audio.duration) && saved.t < audio.duration - 1) audio.currentTime = saved.t;
+        }, { once: true });
+      }
+    } catch (e) {}
+    let lastSave = 0;
+    const savePos = () => {
+      try { sessionStorage.setItem(posKey, JSON.stringify({ id: music.id, t: audio.currentTime || 0 })); } catch (e) {}
+    };
+    audio.addEventListener('timeupdate', () => {
+      const now = Date.now();
+      if (now - lastSave > 2000) { lastSave = now; savePos(); }
+    });
+    window.addEventListener('pagehide', savePos);
 
     const queuePlaybackUnlock = () => {
       // Tetap tersembunyi: interaksi pertama pada bagian mana pun di halaman
@@ -1360,9 +1386,7 @@
       title.title = 'Musik akan dimulai pada interaksi pertama di halaman';
       if (retryAdded) return;
       retryAdded = true;
-      window.addEventListener('pointerdown', unlockPlayback, true);
-      window.addEventListener('touchend', unlockPlayback, true);
-      window.addEventListener('keydown', unlockPlayback, true);
+      unlockEvents.forEach((name) => window.addEventListener(name, unlockPlayback, true));
     };
 
     playBtn.addEventListener('click', () => {

@@ -1,5 +1,5 @@
 /* Service Worker PWA - cache aman untuk halaman publik */
-const CACHE = 'desa-pwa-' + (self.location.search || 'v7-face');
+const CACHE = 'desa-pwa-m2-' + (self.location.search || 'v7-face');
 const OFFLINE_HTML = '<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Offline</title></head><body style="font-family:system-ui,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center;padding:24px"><div><h2>Anda sedang offline</h2><p>Periksa koneksi internet lalu muat ulang halaman.</p></div></body></html>';
 
 self.addEventListener('install', () => self.skipWaiting());
@@ -12,6 +12,14 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Audio/video selalu langsung ke jaringan: browser memakai Range request (206) yang tidak boleh
+// dijawab dari cache (iOS Safari menolak respons penuh 200 sehingga musik gagal diputar).
+function isMedia(request, url) {
+  if (request.headers.has('range')) return true;
+  if (request.destination === 'audio' || request.destination === 'video') return true;
+  return /\/media\/musik\//i.test(url.pathname) || /\.(?:mp3|wav|ogg|m4a|aac|mp4|webm|mov)$/i.test(url.pathname);
+}
+
 function isSensitive(url) {
   const path = url.pathname.toLowerCase();
   if (path.includes('/admin') || path.includes('/api/') || path.includes('/uploads/protected')) return true;
@@ -23,7 +31,7 @@ function isSensitive(url) {
 }
 
 function cacheable(response) {
-  if (!response || !response.ok || response.type !== 'basic') return false;
+  if (!response || response.status !== 200 || response.type !== 'basic') return false;
   const cc = String(response.headers.get('Cache-Control') || '').toLowerCase();
   return !cc.includes('no-store') && !cc.includes('private');
 }
@@ -34,6 +42,7 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  if (isMedia(request, url)) return;
 
   if (isSensitive(url)) {
     event.respondWith(fetch(request, { cache: 'no-store' }));

@@ -116,6 +116,14 @@ class MediaController extends Controller {
     }
 
     public function musik($id = null): void {
+        // Lepas kunci sesi agar streaming audio tidak menahan request lain dari pengunjung yang sama.
+        if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+        // Kompresi/buffer output membuat Content-Length tidak cocok & audio tertahan sampai selesai dibaca.
+        @ini_set('zlib.output_compression', '0');
+        while (ob_get_level() > 0) @ob_end_clean();
+        @set_time_limit(0);
+        header_remove('Pragma');
+        header_remove('Expires');
         $row = db_row("SELECT file_path FROM background_music
             WHERE id = ? AND is_active = 1", [(int) $id]);
         if (!$row || !$row['file_path']) { http_response_code(404); exit; }
@@ -176,9 +184,10 @@ class MediaController extends Controller {
 
         $remaining = $length;
         while ($remaining > 0 && !feof($fp)) {
-            $chunk = fread($fp, min(8192, $remaining));
+            $chunk = fread($fp, min(65536, $remaining));
             if ($chunk === false || $chunk === '') break;
             echo $chunk;
+            flush();
             $remaining -= strlen($chunk);
             if (connection_aborted()) break;
         }
