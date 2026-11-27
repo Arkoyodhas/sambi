@@ -33,3 +33,9 @@ Perbaiki fitur cloning website admin (gagal karena batas waktu request) dan past
 - core/App.php: error database dicatat ke error_log dengan Kode; admin yang login melihat detail teknis (pengunjung tidak).
 - MenuController: regex URL menu internal diperbaiki (sebelumnya semua link internal ditolak).
 - Testing agent iteration_2 & 3: alur instal clone (MariaDB + MySQL 8) dan regresi tulis/baca situs sumber lulus.
+
+## Update (Nov 2026) — Musik latar tidak berjalan untuk pengunjung
+- sw.js: audio/video & Range request tidak lagi lewat cache Service Worker (penyebab gagal di iOS/Safari, seek/loop rusak); hanya status 200 yang di-cache; nama cache diganti agar cache lama terhapus.
+- app.js: data musik dimuat saat halaman dibuka (bukan setelah scroll), tap/klik pertama langsung memutar musik (pointerup/touchend/click/keydown), posisi lagu dilanjutkan saat pindah halaman.
+- MediaController::musik: lepas kunci sesi, matikan buffer/kompresi output, stream per 64KB dengan flush.
+- Testing agent: backend 100%, frontend 100% (Chrome dengan autoplay policy asli, emulasi iPhone & Pixel).
